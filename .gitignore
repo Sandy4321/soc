@@ -2,7 +2,16 @@
 # large files
 data/
 
+# extra files
+soc.egg-info
+.eggs/
+.cache/
+__pycache__
+
 # virtual environments
 venv/
 ENV/
+
+# python files
+*.pyc
 
