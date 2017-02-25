@@ -12,19 +12,18 @@ import click
 import logging
 import os
 import uuid
+
 from urllib2 import urlopen, Request, HTTPError
+
+import numpy as np
 
 
 class Module(object):
-    """Defines the abstract module class.
+    """Defines the abstract module class."""
 
-    TODO: Documentation.
-    """
-
-    def __init__(self, batch_size=32):
+    def __init__(self):
         self.module_name = self.__class__.__name__.lower()
         self.data_subdir = get_module_subdir(self.module_name)
-        self.batch_size = batch_size
 
     def get_path(self, fname):
         """Returns the path to the specified module file.
@@ -39,7 +38,8 @@ class Module(object):
         fpath = os.path.join(self.data_subdir, fname)
         return fpath
 
-    def get_unique(self, ext):
+    @staticmethod
+    def get_unique(ext):
         """Returns a unique filename with the desired extension.
 
         Args:
@@ -49,7 +49,7 @@ class Module(object):
             a unique file path in this module with the right extension.
         """
 
-        return self.get_path('%s.%s' % (str(uuid.uuid4()), ext))
+        return '%s.%s' % (str(uuid.uuid4()), ext)
 
     def validate_file(self, fname, md5_hash):
         """Validates a file's MD5 hash, as done in Keras.
@@ -86,49 +86,137 @@ class Module(object):
             fpath: str, path to the downloaded file.
         """
 
-        fpath = self.get_file_path(fname)
+        fpath = self.get_path(fname)
 
-        # Automatically download if no cache exists, or the MD5 hash is bad.
-        if not os.path.exists(fpath):
-            download = True
-        else:
-            if md5_hash is not None:
-                if not self._validate_file(fpath, md5_hash):
-                    print('A local file was found, but it seems to be '
-                          'incomplete or outdated.')
-                    download = True
+        if not os.path.exists(fpath) or download:
+            response = urlopen(url)
+            info, url = response.info(), response.url
 
-        response = urlopen(url)
-        info, url = response.info(), response.url
+            # Gets the total file size from the header.
+            fsize = int(info.get('Content-Length').strip())
 
-        # Gets the total file size from the header.
-        fsize = int(info.get('Content-Length').strip())
+            if use_bar:
+                bar = click.progressbar(length=fsize,
+                                        label=self.module_name,
+                                        fill_char='=',
+                                        empty_char='.')
 
-        if use_bar:
-            bar = click.progressbar(length=fsize, label=self.module_name)
-
-        # Downloads the file.
-        chunk_size = get_setting('chunk_size')
-        with open(fpath, 'wb') as f:
-            chunk = response.read(chunk_size)
-            while chunk is not None:
-                f.write(chunk)
-                if use_bar:
-                    bar.update(chunk_size)
+            # Downloads the file.
+            chunk_size = get_setting('chunk_size')
+            with open(fpath, 'wb') as f:
                 chunk = response.read(chunk_size)
+                while chunk:
+                    f.write(chunk)
+                    if use_bar:
+                        bar.update(chunk_size)
+                    chunk = response.read(chunk_size)
 
-        if use_bar:
-            bar.close()
+            if use_bar:
+                bar.finish()
 
         return fpath
 
-    def download(self):
-        """Downloads the data and performs all preprocessing.
 
-        Child methods should override this method. The command-line tool calls
-        this method to download things.
+class ArrayModule(Module):
+    """Defines a module where data are Numpy arrays.
+
+    This module should have either two arrays (x_train, y_train) or four arrays
+    ((x_train, y_train), (x_test, y_test)).
+    """
+
+    def get_data(self):
+        """Gets the training data for this module.
+
+        Returns:
+            tuple of (input_data, output_data), where input_data and
+            output_data are lists of Numpy arrays.
         """
+
         raise NotImplementedError()
 
-    def pd(self):
+    def get_test_data(self):
+        """Gets the testing data for this module.
+
+        Returns:
+            tuple of (input_data, output_data), where input_data and
+            output_data are lists of Numpy arrays.
+        """
+
         raise NotImplementedError()
+
+    def __call__(self):
+        return self.get_data()
+
+    @staticmethod
+    def validate_dataset(x_data, y_data):
+        """Validates properties about the dataset.
+
+        Args:
+            x_data: list of Numpy arrays, the input data.
+            y_data: list of Numpy arrays, the output / target data.
+
+        Raises:
+            ValueError: if there is a validation problem.
+        """
+
+        # Checks that the batch sizes are equal.
+        def _check_batch_dim(*args):
+            return len(args) == 0 or [i == args[0] for i in args]
+
+        if not _check_batch_dim(x_data):
+            raise ValueError('The batch dimension of x_data is not equal '
+                             'for all arrays in the dataset. Got: %s'
+                             % str([i.shape[0] for i in x_data]))
+
+        if not _check_batch_dim(y_data):
+            raise ValueError('The batch dimension of y_data is not equal '
+                             'for all arrays in the dataset. Got: %s'
+                             % str([i.shape[0] for i in y_data]))
+
+        return True
+
+
+    def iterate_data(self,
+                     batch_size,
+                     mode='train',
+                     randomize=True):
+        """Iterates the training data.
+
+        Args:
+            batch_size: int, the size of each batch.
+            mode: str, 'train' or 'test'.
+            randomize: bool, whether to randomize the batch entries.
+
+        Yields:
+            tuple of lists (x_data, y_data), where x_data and y_data are lists
+            of numpy arrays with first dimension batch_size.
+        """
+
+        if mode == 'train':
+            x_data, y_data = self.get_data()
+        elif mode == 'test':
+            try:
+                x_data, y_data = self.get_test_data()
+            except NotImplementedError:
+                x_data, y_data = self.get_data()
+
+        # Validates whichever dataset is being used.
+        ArrayModule.validate_dataset(x_data, y_data)
+
+        # Gets the number of samples.
+        nb_samples = x_data[0].shape[0]
+
+        if not randomize:
+            count = 0
+
+        # Continually yield batches.
+        while True:
+            if randomize:
+                idx = np.random.choice(nb_samples, batch_size)
+            else:
+                idx = [i % nb_samples for i in
+                       range(count, count + batch_size)]
+                count = (count + batch_size) % nb_samples
+            x_batch = [x[idx] for x in x_data]
+            y_batch = [y[idx] for y in y_data]
+            yield x_batch, y_batch

@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+from decorators import download_test
+
 import os
 import pytest
 
@@ -16,20 +18,22 @@ def test_get_path():
 
 
 def test_get_unique():
-    unique_path = module.get_unique('txt')
-    fpath, fname = os.path.split(unique_path)
+    unique_name = base.Module.get_unique('txt')
+    unique_path = module.get_path(unique_name)
 
     assert not os.path.exists(unique_path)
-    assert fname.endswith('.txt')
+    assert unique_name.endswith('.txt')
+
+
+@download_test
+def test_get_file():
+    url = 'http://ben.bolte.cc/resume.pdf'
+    fname = 'resume.pdf'
+    fpath = module.get_file(fname, url, use_bar=True, download=True)
+    fpath, fname_new = os.path.split(fpath)
+
+    assert fname_new == fname
     assert fpath.endswith('module')
-
-
-def test_not_implemented():
-    with pytest.raises(NotImplementedError):
-        module.download()
-
-    with pytest.raises(NotImplementedError):
-        module.pd()
 
 
 if __name__ == '__main__':
