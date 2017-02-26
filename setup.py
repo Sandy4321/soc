@@ -26,7 +26,7 @@ setup(
     tests_require=['pytest'],
 
     # Installation adds the command-line interface.
-    entry_points = {"console_scripts": ['soc = soc.cli:cli']},
+    entry_points = {"console_scripts": ['pysoc = soc.cli:cli']},
 
     long_description='See "%s"' % github_url,
     license='MIT'

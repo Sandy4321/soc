@@ -9,6 +9,7 @@ from ._base import TextModule
 
 import click
 import gzip
+import os
 import json
 import time
 import random
@@ -56,6 +57,9 @@ class AskReddit(TextModule):
         with gzip.open(fpath, 'rb') as f:
             self._data = pkl.load(f)
 
+        all_text = ' '.join(' '.join(i for i in x) for x in self._data)
+        self.update_dicts_with_str(all_text)
+
     @property
     def train_data(self):
         """Returns the training data, loading it if necessary."""
@@ -66,11 +70,11 @@ class AskReddit(TextModule):
         questions, answers = self._data
         questions = self.encode(questions,
                                 max_len=self.max_question_len,
-                                update_dicts=True,
+                                update_dicts=False,
                                 one_hot=self.one_hot_input)
         answers = self.encode(answers,
                               max_len=self.max_answer_len,
-                              update_dicts=True,
+                              update_dicts=False,
                               one_hot=self.one_hot_output)
 
         return [questions], [answers]
@@ -100,7 +104,7 @@ def ask_reddit():
 
 
 @ask_reddit.command()
-@click.option('--fname', default='askreddit')
+@click.option('--fname', default='ask_reddit')
 @click.option('--num_results', default=1000)
 @click.option('--override', default=False)
 @click.option('--num_comments', default=5)
@@ -137,6 +141,9 @@ def download(fname,
 
     num_parsed = 0
     for submission in reddit.subreddit('AskReddit').top(time_filter):
+        if num_parsed >= num_results:
+            break
+
         title = submission.title.strip()
 
         # Filters out non-question threads.
@@ -152,12 +159,10 @@ def download(fname,
             if num_parsed >= num_results:
                 break
 
-        if num_parsed >= num_results:
-            break
-
     bar.finish()
 
     # Saves the output.
+    click.echo('Saving to "%s"' % fpath)
     with gzip.open(fpath, 'wb') as f:
         pkl.dump([questions, answers], f)
     click.echo('Done')

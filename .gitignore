@@ -7,6 +7,7 @@ soc.egg-info
 .eggs/
 .cache/
 __pycache__
+.ipynb_checkpoints
 
 # virtual environments
 venv/

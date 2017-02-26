@@ -5,4 +5,4 @@ from .nietzsche import Nietzsche
 from .ask_reddit import AskReddit
 from ._settings import set_setting
 
-__all__ = ['MNIST', 'Nietzsche']
+__all__ = ['MNIST', 'Nietzsche', 'AskReddit']

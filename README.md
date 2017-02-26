@@ -4,13 +4,9 @@
 
 ## Installation
 
-TODO
+```bash
+pip install git+https://github.com/codekansas/soc
+```
 
-## Usage
-
-TODO
-
-## Command-line Interface
-
-SOC includes a command-line tool for downloading and viewing datasets.
+<sub>This project was created for [Hack Illinois 2017](https://hackillinois.org/).</sub>
 

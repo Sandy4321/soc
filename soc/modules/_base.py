@@ -13,6 +13,8 @@ import logging
 import os
 import uuid
 import warnings
+import six
+import re
 
 from urllib2 import urlopen
 
@@ -195,15 +197,13 @@ class Module(object):
     def iterate_data(self,
                      batch_size,
                      mode='train',
-                     randomize=True,
-                     num_epoch=10):
+                     randomize=True):
         """Iterates the training data.
 
         Args:
             batch_size: int, the size of each batch.
             mode: str, 'train' or 'test'.
             randomize: bool, whether to randomize the batch entries.
-            num_epoch: int, number of times to go through the training data.
 
         Yields:
             tuple of lists (x_data, y_data), where x_data and y_data are lists
@@ -214,13 +214,7 @@ class Module(object):
             raise ValueError('Invalid mode: "%s" (should be "train" or '
                              '"test")' % mode)
 
-        if randomize:
-            idxs = np.arange(num_samples)
-
-        for epoch in range(num_epoch):
-
-            logging.info('Starting Epoch %d', epoch + 1)
-
+        while True:
             # Updates the data.
             if mode == 'train':
                 x_data, y_data = self.train_data
@@ -231,12 +225,15 @@ class Module(object):
             num_samples = x_data[0].shape[0]
 
             if randomize:
+                idxs = np.arange(num_samples)
+
+            if randomize:
                 np.random.shuffle(idxs)
-                for i in range(batch_size, num_epoch, batch_size):
+                for i in range(batch_size, num_samples, batch_size):
                     idx = idxs[i - batch_size:i]
                     yield [x[idx] for x in x_data], [y[idx] for y in y_data]
             else:
-                for i in range(batch_size, num_epoch, batch_size):
+                for i in range(batch_size, num_samples, batch_size):
                     yield x_data[i - batch_size:i], y_data[i - batch_size:i]
 
 
@@ -263,6 +260,21 @@ class TextModule(Module):
 
         super(TextModule, self).__init__()
 
+    def update_dicts_with_str(self, string):
+        """Adds a string to the look-up dictionaries.
+
+        Args:
+            string: str, the string to add.
+        """
+
+        if self.serialize is None:
+            string_list = set(string)
+        else:
+            string_list = set(self.serialize(string))
+
+        for token in string_list:
+            self.update_dicts(token)
+
     def update_dicts(self, c):
         """Adds a character to the look-up dictionaries.
 
@@ -286,7 +298,7 @@ class TextModule(Module):
         """Decodes a Numpy array to a string or list of strings.
 
         Args:
-            data: Numpy array, the data to decode.
+            data: int or Numpy array, the data to decode.
             argmax: bool, whether or not to take the argmax over the last
                 dimension in the data array.
 
@@ -297,16 +309,22 @@ class TextModule(Module):
         if argmax:
             data = np.argmax(data, axis=-1)
 
-        if np.ndim(data) == 1:
-            text =  ''.join(self._idx_to_char.get(x, self.missing)
-                            for x in data)
+        if isinstance(data, int):
+            text = self._idx_to_char.get(data, self.missing)
+        elif np.ndim(data) == 1:
+            if self.serialize is None:
+                text =  ''.join(self._idx_to_char.get(x, self.missing)
+                                for x in data if x > 0)
+            else:
+                text =  ' '.join(self._idx_to_char.get(x, self.missing)
+                                 for x in data if x > 0)
         elif np.ndim(data) == 2:
-            text = [self.decode(x, argmax=argmax) for x in data]
+            text = [self.decode(x, argmax=False) for x in data]
         else:
             raise ValueError('Invalid number of dimensions: %d. The provided '
                              'array should be 1 dimension or 2 dimensions '
                              'after doing the argmax over the last dimension.'
-                             % np.ndim(x))
+                             % np.ndim(data))
 
         return text
 
@@ -331,12 +349,15 @@ class TextModule(Module):
                 or (len(data), max_len) if the data is a list of strings.
         """
 
+        if one_hot and update_dicts:
+            raise ValueError('one_hot and update_dicts cannot both be set.')
+
         if isinstance(data, (list, tuple)):
             arr = np.stack([self.encode(string, max_len,
                                         update_dicts=update_dicts,
                                         one_hot=one_hot)
                             for string in data])
-        elif isinstance(data, str):
+        elif isinstance(data, six.string_types):
             if self.serialize is not None:
                 data = self.serialize(data)
 
@@ -349,12 +370,12 @@ class TextModule(Module):
                 if one_hot:
                     eye = np.eye(self.num_chars)
                     arr = np.zeros(shape=(max_len, self.num_chars))
-                    arr[:len(data)] = np.asarray([eye[self._char_to_idx[c]]
-                                                  for c in data])
+                    data = np.asarray([eye[self._char_to_idx[c]] for c in data])
+                    arr[:len(data)] = data[:max_len]
                 else:
                     arr = np.zeros(shape=(max_len,))
-                    arr[:len(data)] = np.asarray([self._char_to_idx[c]
-                                                  for c in data])
+                    data = np.asarray([self._char_to_idx[c] for c in data])
+                    arr[:len(data)] = data[:max_len]
 
             except KeyError:
                 raise KeyError('You tried to encode a character that wasn\'t '
@@ -363,7 +384,7 @@ class TextModule(Module):
                                'are encoded.')
         else:
             raise ValueError('The data must be either a string or list of '
-                             'strings. Got "%s"' % type(data))
+                             'strings. Got "%s"' % (data))
 
         return arr
 
