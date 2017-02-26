@@ -246,11 +246,21 @@ class TextModule(Module):
     This module should have its data as a string.
     """
 
-    def __init__(self, missing='?', end='|'):
+    def __init__(self, level='char', missing='?', end='|'):
         self.missing = missing
         self.end = end
         self._char_to_idx = {end: 0}
         self._idx_to_char = {0: end}
+
+        if level == 'char':
+            self.serialize = None
+        elif level == 'word':
+            regex_str = '|'.join(['[a-zA-Z]+', '\d+', '[\?\.\!\(\)]'])
+            self.serialize = lambda x: re.findall(regex_str, x)
+        else:
+            raise ValueError('"level" should be one of ["char", "word"], got '
+                             '"%s"' % level)
+
         super(TextModule, self).__init__()
 
     def update_dicts(self, c):
@@ -327,6 +337,9 @@ class TextModule(Module):
                                         one_hot=one_hot)
                             for string in data])
         elif isinstance(data, str):
+            if self.serialize is not None:
+                data = self.serialize(data)
+
             if update_dicts:
                 new_chars = [c for c in data if c not in self._char_to_idx]
                 for c in new_chars:
