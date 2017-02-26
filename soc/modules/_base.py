@@ -12,6 +12,7 @@ import click
 import logging
 import os
 import uuid
+import warnings
 
 from urllib2 import urlopen, Request, HTTPError
 
@@ -116,107 +117,270 @@ class Module(object):
 
         return fpath
 
-
-class ArrayModule(Module):
-    """Defines a module where data are Numpy arrays.
-
-    This module should have either two arrays (x_train, y_train) or four arrays
-    ((x_train, y_train), (x_test, y_test)).
-    """
-
-    def get_data(self):
-        """Gets the training data for this module.
-
-        Returns:
-            tuple of (input_data, output_data), where input_data and
-            output_data are lists of Numpy arrays.
-        """
-
-        raise NotImplementedError()
-
-    def get_test_data(self):
-        """Gets the testing data for this module.
-
-        Returns:
-            tuple of (input_data, output_data), where input_data and
-            output_data are lists of Numpy arrays.
-        """
-
-        raise NotImplementedError()
-
-    def __call__(self):
-        return self.get_data()
-
     @staticmethod
     def validate_dataset(x_data, y_data):
         """Validates properties about the dataset.
 
         Args:
-            x_data: list of Numpy arrays, the input data.
-            y_data: list of Numpy arrays, the output / target data.
+            x_data: list of lists or Numpy arrays, the input data.
+            y_data: list of lists or Numpy arrays, the output / target data.
 
         Raises:
             ValueError: if there is a validation problem.
         """
 
         # Checks that the batch sizes are equal.
-        def _check_batch_dim(*args):
-            return len(args) == 0 or [i == args[0] for i in args]
+        def _check_batch_dim(args):
+            return not args or [len(i) == args[0] for i in args[1:]]
 
         if not _check_batch_dim(x_data):
             raise ValueError('The batch dimension of x_data is not equal '
                              'for all arrays in the dataset. Got: %s'
-                             % str([i.shape[0] for i in x_data]))
+                             % str([len(i) for i in x_data]))
 
         if not _check_batch_dim(y_data):
             raise ValueError('The batch dimension of y_data is not equal '
                              'for all arrays in the dataset. Got: %s'
-                             % str([i.shape[0] for i in y_data]))
+                             % str([len(i) for i in y_data]))
+
+        if x_data and y_data and not len(x_data[0]) == len(y_data[0]):
+            raise ValueError('Different number of x_data and y_data samples: '
+                             'x_data has %d, y_data has %d'
+                             % (len(x_data[0]), len(y_data[0])))
 
         return True
 
+    @property
+    def shape(self):
+        """Gets a tuple of (input_shape, output_shape)."""
+
+        return self.input_shape, self.output_shape
+
+    def __call__(self):
+        return self.train_data
+
+    def load_data(self):
+        """Method signature for doing all the preprocessing."""
+
+        raise NotImplementedError()
+
+    @property
+    def test_data(self):
+        """Gets the testing data, a tuple (x_test, y_test)."""
+
+        # return [np.array()], [np.array()]
+        raise NotImplementedError()
+
+    @property
+    def train_data(self):
+        """Gets the training data, a tuple (x_train, y_train)."""
+
+        # return [np.array()], [np.array()]
+        raise NotImplementedError()
+
+    @property
+    def input_shape(self):
+        """Gets the input shape as a list of tuples."""
+
+        # return [()]
+        raise NotImplementedError()
+
+    @property
+    def output_shape(self):
+        """Gets the output shape as a list of tuples."""
+
+        # return [()]
+        raise NotImplementedError()
 
     def iterate_data(self,
                      batch_size,
                      mode='train',
-                     randomize=True):
+                     randomize=True,
+                     num_epoch=10):
         """Iterates the training data.
 
         Args:
             batch_size: int, the size of each batch.
             mode: str, 'train' or 'test'.
             randomize: bool, whether to randomize the batch entries.
+            num_epoch: int, number of times to go through the training data.
 
         Yields:
             tuple of lists (x_data, y_data), where x_data and y_data are lists
             of numpy arrays with first dimension batch_size.
         """
 
-        if mode == 'train':
-            x_data, y_data = self.get_data()
-        elif mode == 'test':
-            try:
-                x_data, y_data = self.get_test_data()
-            except NotImplementedError:
-                x_data, y_data = self.get_data()
+        if mode not in ('train', 'test'):
+            raise ValueError('Invalid mode: "%s" (should be "train" or '
+                             '"test")' % mode)
 
-        # Validates whichever dataset is being used.
-        ArrayModule.validate_dataset(x_data, y_data)
+        if randomize:
+            idxs = np.arange(num_samples)
 
-        # Gets the number of samples.
-        nb_samples = x_data[0].shape[0]
+        for epoch in range(num_epoch):
 
-        if not randomize:
-            count = 0
+            logging.info('Starting Epoch %d', epoch + 1)
 
-        # Continually yield batches.
-        while True:
-            if randomize:
-                idx = np.random.choice(nb_samples, batch_size)
+            # Updates the data.
+            if mode == 'train':
+                x_data, y_data = self.train_data
             else:
-                idx = [i % nb_samples for i in
-                       range(count, count + batch_size)]
-                count = (count + batch_size) % nb_samples
-            x_batch = [x[idx] for x in x_data]
-            y_batch = [y[idx] for y in y_data]
-            yield x_batch, y_batch
+                x_data, y_data = self.test_data
+
+            # Gets the number of samples.
+            num_samples = x_data[0].shape[0]
+
+            if randomize:
+                np.random.shuffle(idxs)
+                for i in range(batch_size, num_epoch, batch_size):
+                    idx = idxs[i - batch_size:i]
+                    yield [x[idx] for x in x_data], [y[idx] for y in y_data]
+            else:
+                for i in range(batch_size, num_epoch, batch_size):
+                    yield x_data[i - batch_size:i], y_data[i - batch_size:i]
+
+
+class TextModule(Module):
+    """Defines a module where data are strings.
+
+    This module should have its data as a string.
+    """
+
+    def __init__(self, missing='?', end='|'):
+        self.missing = missing
+        self.end = end
+        self._char_to_idx = {end: 0}
+        self._idx_to_char = {0: end}
+        super(TextModule, self).__init__()
+
+    def update_dicts(self, c):
+        """Adds a character to the look-up dictionaries.
+
+        Args:
+            c: str, the character to add to the dictionary.
+
+        Returns:
+            bool, False if the character was already in the dictionary.
+        """
+
+        if c in self._char_to_idx:
+            return False
+
+        idx = self.num_chars
+        self._char_to_idx[c] = idx
+        self._idx_to_char[idx] = c
+
+        return True
+
+    def decode(self, data, argmax=True):
+        """Decodes a Numpy array to a string or list of strings.
+
+        Args:
+            data: Numpy array, the data to decode.
+            argmax: bool, whether or not to take the argmax over the last
+                dimension in the data array.
+
+        Returns:
+            text: string or list of strings, the decoded text.
+        """
+
+        if argmax:
+            data = np.argmax(data, axis=-1)
+
+        if np.ndim(data) == 1:
+            text =  ''.join(self._idx_to_char.get(x, self.missing)
+                            for x in data)
+        elif np.ndim(data) == 2:
+            text = [self.decode(x, argmax=argmax) for x in data]
+        else:
+            raise ValueError('Invalid number of dimensions: %d. The provided '
+                             'array should be 1 dimension or 2 dimensions '
+                             'after doing the argmax over the last dimension.'
+                             % np.ndim(x))
+
+        return text
+
+    @property
+    def num_chars(self):
+        """Returns the number of characters in the dictionary."""
+
+        return len(self._idx_to_char)
+
+    def encode(self, data, max_len, update_dicts=False, one_hot=False):
+        """Encodes a string or list of strings to a Numpy array.
+
+        Args:
+            data: string or list of strings, the data to encode.
+            max_len: int, maximum length of a string.
+            update_dicts: bool, if set, updates the dictionary while encoding
+                the strings.
+            one_hot: bool, if set, return
+
+        Returns:
+            arr: the Numpy array, with shape (max_len) if the data is a string
+                or (len(data), max_len) if the data is a list of strings.
+        """
+
+        if isinstance(data, (list, tuple)):
+            arr = np.stack([self.encode(string, max_len,
+                                        update_dicts=update_dicts,
+                                        one_hot=one_hot)
+                            for string in data])
+        elif isinstance(data, str):
+            if update_dicts:
+                new_chars = [c for c in data if c not in self._char_to_idx]
+                for c in new_chars:
+                    self.update_dicts(c)
+
+            try:
+                if one_hot:
+                    eye = np.eye(self.num_chars)
+                    arr = np.zeros(shape=(max_len, self.num_chars))
+                    arr[:len(data)] = np.asarray([eye[self._char_to_idx[c]]
+                                                  for c in data])
+                else:
+                    arr = np.zeros(shape=(max_len,))
+                    arr[:len(data)] = np.asarray([self._char_to_idx[c]
+                                                  for c in data])
+
+            except KeyError:
+                raise KeyError('You tried to encode a character that wasn\'t '
+                               'in the look-up dict. Setting update_dict=True '
+                               'will update the look-up dict as the characters '
+                               'are encoded.')
+        else:
+            raise ValueError('The data must be either a string or list of '
+                             'strings. Got "%s"' % type(data))
+
+        return arr
+
+    @staticmethod
+    def get_string_samples(string, sample_len, num_samples, include_next=False):
+        """Returns num_samples substrings from the big string.
+
+        Args:
+            string: str, the string to draw samples from.
+            sample_len: int, the length of each sample.
+            num_samples: int, the number of samples to generate.
+
+        Returns:
+            (x_data, y_data) if include_next, otherwise just x_data.
+        """
+
+        min_length = sample_len + num_samples - 1
+        if include_next:
+            min_length += 1
+
+        if len(string) < min_length:
+            raise ValueError('The string to draw samples from is too short. '
+                             'It is only %d characters, but it should be at '
+                             'least %d characters' (len(string), min_length))
+
+        idxs = np.random.choice(len(string) - sample_len, num_samples)
+        x_data = [string[i:i + sample_len] for i in idxs]
+
+        if include_next:
+            y_data = [string[i + sample_len:i + sample_len + 1] for i in idxs]
+            return x_data, y_data
+        else:
+            return x_data

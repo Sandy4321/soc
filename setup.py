@@ -16,7 +16,7 @@ setup(
 
     # These are the open-source packages SOC is built around.
     install_requires=[
-        'numpy',
+        'numpy==1.12',
         'six',
         'click',
     ],

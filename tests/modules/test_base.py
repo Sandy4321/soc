@@ -1,7 +1,5 @@
 from __future__ import absolute_import
 
-from decorators import download_test
-
 import os
 import pytest
 
@@ -25,7 +23,7 @@ def test_get_unique():
     assert unique_name.endswith('.txt')
 
 
-@download_test
+@pytest.mark.long
 def test_get_file():
     url = 'http://ben.bolte.cc/resume.pdf'
     fname = 'resume.pdf'
