@@ -23,7 +23,30 @@ pip install git+https://github.com/codekansas/soc
 The modules come with command-line tools for downloading data.
 
 ```bash
-pysoc --help
+>>> pysoc --help
+Usage: pysoc  <command>
+
+  SOC: Data management system.
+
+Options:
+  -h, --help  Show this message and exit.
+
+Commands:
+  ask_reddit  AskReddit command-line interface.
+  mnist       MNIST command-line interface.
+  nietzsche   Nietzsche command-line interface.
+
+>>> pysoc ask_reddit --help
+Usage: pysoc ask_reddit download [OPTIONS]
+
+Options:
+  --fname TEXT
+  --num_results INTEGER
+  --override TEXT
+  --num_comments INTEGER
+  --time_filter [hour|day|week|month|year|all]
+  --wait_time FLOAT
+  -h, --help                      Show this message and exit.
 ```
 
 ## Example
