@@ -7,11 +7,11 @@ import os
 import pytest
 
 from soc.modules import MNIST
-mnist = MNIST()
+mnist = MNIST(one_hot_output=False)
 
 
 def test_shape():
-    assert mnist.shape == ([(28, 28)], [()])
+    assert mnist.shape == ([(28, 28)], [(1,)])
 
 
 @pytest.mark.long

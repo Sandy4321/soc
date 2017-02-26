@@ -13,7 +13,9 @@ import logging
 logging.basicConfig()
 logging.getLogger().setLevel(logging.INFO)
 
-from .modules import MNIST
+from .modules.mnist import mnist as mnist_cli
+from .modules.nietzsche import nietzsche as nietzsche_cli
+from .modules.ask_reddit import ask_reddit as ask_reddit_cli
 
 
 @click.group(options_metavar='',
@@ -24,4 +26,6 @@ def cli():
     SOC: Data management system.
     """
 
-# cli.add_command(MNIST)
+cli.add_command(mnist_cli)
+cli.add_command(nietzsche_cli)
+cli.add_command(ask_reddit_cli)

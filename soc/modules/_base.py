@@ -14,7 +14,7 @@ import os
 import uuid
 import warnings
 
-from urllib2 import urlopen, Request, HTTPError
+from urllib2 import urlopen
 
 import numpy as np
 

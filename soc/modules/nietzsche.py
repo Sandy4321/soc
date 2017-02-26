@@ -7,17 +7,14 @@ from __future__ import print_function
 
 from ._base import TextModule
 
-from six.moves import cPickle as pkl
+import click
 
 # Where the Nietche data is hosted.
 _NIETZSCHE_URL = 'https://s3.amazonaws.com/text-datasets/nietzsche.txt'
 
 
 class Nietzsche(TextModule):
-    """Module for Nietzsche dataset.
-
-    This is a utility for caching and loading the Nietzsche data.
-    """
+    """Module for downloading and caching the Nietzsche text file."""
 
     def __init__(self,
                  sample_len,
@@ -26,6 +23,7 @@ class Nietzsche(TextModule):
                  include_next=True,
                  one_hot_input=False,
                  one_hot_output=True,
+                 fname='nietzsche.txt',
                  **kwargs):
         """Creates a Nietzsche Module object.
 
@@ -47,13 +45,14 @@ class Nietzsche(TextModule):
         self.include_next = include_next
         self.one_hot_input = one_hot_input
         self.one_hot_output = one_hot_output
+        self.fname = fname
         self._text = None
         super(Nietzsche, self).__init__(**kwargs)
 
     def load_data(self):
         """Loads the training and testing data."""
 
-        nietzsche_path = self.get_file('nietzsche.txt',
+        nietzsche_path = self.get_file(self.fname,
                                        _NIETZSCHE_URL,
                                        use_bar=True,
                                        download=False)
@@ -130,3 +129,32 @@ class Nietzsche(TextModule):
                 return [(1,)]
         else:
             return [()]
+
+
+@click.group()
+def nietzsche():
+    """MNIST command-line interface."""
+
+
+@nietzsche.command()
+@click.option('--fname', default='nietzsche.txt')
+def download(fname):
+    Nietzsche().get_file(fname,
+                         _NIETZSCHE_URL,
+                         use_bar=True,
+                         download=False)
+
+
+@nietzsche.command()
+@click.option('--sample_len', default=100)
+@click.option('--one_hot_input/--no_one_hot_input', default=False)
+@click.option('--one_hot_output/--no_one_hot_output', default=True)
+@click.option('--include_next/--no_include_next', default=True)
+def shape(sample_len, one_hot_input, one_hot_output, include_next):
+    n = Nietzsche(sample_len=sample_len,
+                  num_samples=1,
+                  one_hot_input=one_hot_input,
+                  one_hot_output=one_hot_output,
+                  include_next=include_next)
+    click.echo('Input shape: %s -- Output shape: %s'
+               % (n.input_shape, n.output_shape))
